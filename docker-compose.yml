@@ -48,5 +48,8 @@ services:
         # token加密凭证（随便填，作为登录凭证）
       - MONGODB_URI=mongodb://username:password@0.0.0.0:27017/fastgpt?authSource=admin
       - PG_URL=postgresql://username:password@0.0.0.0:5432/postgres
+      - TOKEN_KEY=any
+      - ROOT_KEY=root_key
+      - FILE_TOKEN_KEY=filetoken
     volumes:
       - ./config.json:/app/data/config.json
