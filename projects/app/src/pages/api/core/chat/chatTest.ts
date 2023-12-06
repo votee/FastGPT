@@ -30,67 +30,67 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   });
 
   let { modules = [], history = [], prompt, variables = {}, appName, appId } = req.body as Props;
-  try {
-    await connectToDatabase();
-    if (!history || !modules || !prompt) {
-      throw new Error('Prams Error');
-    }
-    if (!Array.isArray(modules)) {
-      throw new Error('history is not array');
-    }
-
-    /* user auth */
-    const [{ teamId, tmbId }, { user }] = await Promise.all([
-      authApp({ req, authToken: true, appId, per: 'r' }),
-      authUser({
-        req,
-        authToken: true,
-        minBalance: 0
-      })
-    ]);
-
-    /* start process */
-    const { responseData } = await dispatchModules({
-      res,
-      teamId,
-      tmbId,
-      user,
-      appId,
-      modules,
-      variables,
-      params: {
-        history,
-        userChatInput: prompt
-      },
-      stream: true,
-      detail: true
-    });
-
-    responseWrite({
-      res,
-      event: sseResponseEventEnum.answer,
-      data: '[DONE]'
-    });
-    responseWrite({
-      res,
-      event: sseResponseEventEnum.appStreamResponse,
-      data: JSON.stringify(responseData)
-    });
-    res.end();
-
-    pushChatBill({
-      appName,
-      appId,
-      teamId,
-      tmbId,
-      source: BillSourceEnum.fastgpt,
-      response: responseData
-    });
-  } catch (err: any) {
-    res.status(500);
-    sseErrRes(res, err);
-    res.end();
+  // try {
+  await connectToDatabase();
+  if (!history || !modules || !prompt) {
+    throw new Error('Prams Error');
   }
+  if (!Array.isArray(modules)) {
+    throw new Error('history is not array');
+  }
+
+  /* user auth */
+  const [{ teamId, tmbId }, { user }] = await Promise.all([
+    authApp({ req, authToken: true, appId, per: 'r' }),
+    authUser({
+      req,
+      authToken: true,
+      minBalance: 0
+    })
+  ]);
+
+  /* start process */
+  const { responseData } = await dispatchModules({
+    res,
+    teamId,
+    tmbId,
+    user,
+    appId,
+    modules,
+    variables,
+    params: {
+      history,
+      userChatInput: prompt
+    },
+    stream: true,
+    detail: true
+  });
+
+  responseWrite({
+    res,
+    event: sseResponseEventEnum.answer,
+    data: '[DONE]'
+  });
+  responseWrite({
+    res,
+    event: sseResponseEventEnum.appStreamResponse,
+    data: JSON.stringify(responseData)
+  });
+  res.end();
+
+  pushChatBill({
+    appName,
+    appId,
+    teamId,
+    tmbId,
+    source: BillSourceEnum.fastgpt,
+    response: responseData
+  });
+  // } catch (err: any) {
+  //   res.status(500);
+  //   sseErrRes(res, err);
+  //   res.end();
+  // }
 }
 
 export const config = {

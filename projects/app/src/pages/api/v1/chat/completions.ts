@@ -67,96 +67,74 @@ export default withNextCors(async function handler(req: NextApiRequest, res: Nex
     variables = {}
   } = req.body as Props;
 
-  try {
-    await connectToDatabase();
-    // body data check
-    if (!messages) {
-      throw new Error('Prams Error');
-    }
-    if (!Array.isArray(messages)) {
-      throw new Error('messages is not array');
-    }
-    if (messages.length === 0) {
-      throw new Error('messages is empty');
-    }
+  // try {
+  await connectToDatabase();
+  // body data check
+  if (!messages) {
+    throw new Error('Prams Error');
+  }
+  if (!Array.isArray(messages)) {
+    throw new Error('messages is not array');
+  }
+  if (messages.length === 0) {
+    throw new Error('messages is empty');
+  }
 
-    let startTime = Date.now();
+  let startTime = Date.now();
 
-    const chatMessages = gptMessage2ChatType(messages);
-    if (chatMessages[chatMessages.length - 1].obj !== ChatRoleEnum.Human) {
-      chatMessages.pop();
-    }
+  const chatMessages = gptMessage2ChatType(messages);
+  if (chatMessages[chatMessages.length - 1].obj !== ChatRoleEnum.Human) {
+    chatMessages.pop();
+  }
 
-    // user question
-    const question = chatMessages.pop();
-    if (!question) {
-      throw new Error('Question is empty');
-    }
+  // user question
+  const question = chatMessages.pop();
+  if (!question) {
+    throw new Error('Question is empty');
+  }
 
-    /*  auth app permission */
-    const { user, app, responseDetail, authType, apikey, canWrite } = await (async () => {
-      if (shareId) {
-        const { user, app, authType, responseDetail } = await authOutLinkChat({
-          shareId,
-          ip: requestIp.getClientIp(req),
-          authToken,
-          question: question.value
-        });
-        return {
-          user,
-          app,
-          responseDetail,
-          apikey: '',
-          authType,
-          canWrite: false
-        };
-      }
-
-      const {
-        appId: apiKeyAppId,
-        tmbId,
+  /*  auth app permission */
+  const { user, app, responseDetail, authType, apikey, canWrite } = await (async () => {
+    if (shareId) {
+      const { user, app, authType, responseDetail } = await authOutLinkChat({
+        shareId,
+        ip: requestIp.getClientIp(req),
+        authToken,
+        question: question.value
+      });
+      return {
+        user,
+        app,
+        responseDetail,
+        apikey: '',
         authType,
-        apikey
-      } = await authCert({
-        req,
-        authToken: true,
-        authApiKey: true
-      });
+        canWrite: false
+      };
+    }
 
-      const user = await getUserAndAuthBalance({
-        tmbId,
-        minBalance: 0
-      });
+    const {
+      appId: apiKeyAppId,
+      tmbId,
+      authType,
+      apikey
+    } = await authCert({
+      req,
+      authToken: true,
+      authApiKey: true
+    });
 
-      // openapi key
-      if (authType === AuthUserTypeEnum.apikey) {
-        const app = await MongoApp.findById(apiKeyAppId);
+    const user = await getUserAndAuthBalance({
+      tmbId,
+      minBalance: 0
+    });
 
-        if (!app) {
-          return Promise.reject('app is empty');
-        }
+    // openapi key
+    if (authType === AuthUserTypeEnum.apikey) {
+      const app = await MongoApp.findById(apiKeyAppId);
 
-        return {
-          user,
-          app,
-          responseDetail: detail,
-          apikey,
-          authType,
-          canWrite: true
-        };
+      if (!app) {
+        return Promise.reject('app is empty');
       }
-
-      if (!appId) {
-        return Promise.reject('appId is empty');
-      }
-
-      // token
-      const { app, canWrite } = await authApp({
-        req,
-        authToken: true,
-        appId,
-        per: 'r'
-      });
 
       return {
         user,
@@ -164,146 +142,168 @@ export default withNextCors(async function handler(req: NextApiRequest, res: Nex
         responseDetail: detail,
         apikey,
         authType,
-        canWrite: canWrite || false
+        canWrite: true
       };
-    })();
+    }
 
-    // auth app, get history
-    const { history } = await getChatHistory({ chatId, tmbId: user.team.tmbId });
+    if (!appId) {
+      return Promise.reject('appId is empty');
+    }
 
-    const isAppOwner = !shareId && String(user.team.tmbId) === String(app.tmbId);
-
-    /* format prompts */
-    const concatHistory = history.concat(chatMessages);
-
-    /* start flow controller */
-    const { responseData, answerText } = await dispatchModules({
-      res,
-      appId: String(app._id),
-      chatId,
-      modules: app.modules,
-      user,
-      teamId: user.team.teamId,
-      tmbId: user.team.tmbId,
-      variables,
-      params: {
-        history: concatHistory,
-        userChatInput: question.value
-      },
-      stream,
-      detail
+    // token
+    const { app, canWrite } = await authApp({
+      req,
+      authToken: true,
+      appId,
+      per: 'r'
     });
 
-    // save chat
-    if (chatId) {
-      await saveChat({
-        chatId,
-        appId: app._id,
-        teamId: user.team.teamId,
-        tmbId: user.team.tmbId,
-        variables,
-        updateUseTime: isAppOwner, // owner update use time
-        shareId,
-        source: (() => {
-          if (shareId) {
-            return ChatSourceEnum.share;
-          }
-          if (authType === 'apikey') {
-            return ChatSourceEnum.api;
-          }
-          return ChatSourceEnum.online;
-        })(),
-        content: [
-          question,
-          {
-            dataId: messages[messages.length - 1].dataId,
-            obj: ChatRoleEnum.AI,
-            value: answerText,
-            responseData
-          }
-        ]
-      });
-    }
+    return {
+      user,
+      app,
+      responseDetail: detail,
+      apikey,
+      authType,
+      canWrite: canWrite || false
+    };
+  })();
 
-    addLog.info(`completions running time: ${(Date.now() - startTime) / 1000}s`);
+  // auth app, get history
+  const { history } = await getChatHistory({ chatId, tmbId: user.team.tmbId });
 
-    /* select fe response field */
-    const feResponseData = canWrite ? responseData : selectShareResponse({ responseData });
+  const isAppOwner = !shareId && String(user.team.tmbId) === String(app.tmbId);
 
-    if (stream) {
-      responseWrite({
-        res,
-        event: detail ? sseResponseEventEnum.answer : undefined,
-        data: textAdaptGptResponse({
-          text: null,
-          finish_reason: 'stop'
-        })
-      });
-      responseWrite({
-        res,
-        event: detail ? sseResponseEventEnum.answer : undefined,
-        data: '[DONE]'
-      });
+  /* format prompts */
+  const concatHistory = history.concat(chatMessages);
 
-      if (responseDetail && detail) {
-        responseWrite({
-          res,
-          event: sseResponseEventEnum.appStreamResponse,
-          data: JSON.stringify(feResponseData)
-        });
-      }
+  /* start flow controller */
+  const { responseData, answerText } = await dispatchModules({
+    res,
+    appId: String(app._id),
+    chatId,
+    modules: app.modules,
+    user,
+    teamId: user.team.teamId,
+    tmbId: user.team.tmbId,
+    variables,
+    params: {
+      history: concatHistory,
+      userChatInput: question.value
+    },
+    stream,
+    detail
+  });
 
-      res.end();
-    } else {
-      res.json({
-        ...(detail ? { responseData: feResponseData } : {}),
-        id: chatId || '',
-        model: '',
-        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 1 },
-        choices: [
-          {
-            message: { role: 'assistant', content: answerText },
-            finish_reason: 'stop',
-            index: 0
-          }
-        ]
-      });
-    }
-
-    // add record
-    const { total } = pushChatBill({
-      appName: app.name,
+  // save chat
+  if (chatId) {
+    await saveChat({
+      chatId,
       appId: app._id,
       teamId: user.team.teamId,
       tmbId: user.team.tmbId,
-      source: getBillSourceByAuthType({ shareId, authType }),
-      response: responseData
+      variables,
+      updateUseTime: isAppOwner, // owner update use time
+      shareId,
+      source: (() => {
+        if (shareId) {
+          return ChatSourceEnum.share;
+        }
+        if (authType === 'apikey') {
+          return ChatSourceEnum.api;
+        }
+        return ChatSourceEnum.online;
+      })(),
+      content: [
+        question,
+        {
+          dataId: messages[messages.length - 1].dataId,
+          obj: ChatRoleEnum.AI,
+          value: answerText,
+          responseData
+        }
+      ]
+    });
+  }
+
+  addLog.info(`completions running time: ${(Date.now() - startTime) / 1000}s`);
+
+  /* select fe response field */
+  const feResponseData = canWrite ? responseData : selectShareResponse({ responseData });
+
+  if (stream) {
+    responseWrite({
+      res,
+      event: detail ? sseResponseEventEnum.answer : undefined,
+      data: textAdaptGptResponse({
+        text: null,
+        finish_reason: 'stop'
+      })
+    });
+    responseWrite({
+      res,
+      event: detail ? sseResponseEventEnum.answer : undefined,
+      data: '[DONE]'
     });
 
-    if (shareId) {
-      pushResult2Remote({ authToken, shareId, responseData });
-      updateOutLinkUsage({
-        shareId,
-        total
+    if (responseDetail && detail) {
+      responseWrite({
+        res,
+        event: sseResponseEventEnum.appStreamResponse,
+        data: JSON.stringify(feResponseData)
       });
     }
-    if (apikey) {
-      updateApiKeyUsage({
-        apikey,
-        usage: total
-      });
-    }
-  } catch (err: any) {
-    if (stream) {
-      sseErrRes(res, err);
-      res.end();
-    } else {
-      jsonRes(res, {
-        code: 500,
-        error: err
-      });
-    }
+
+    res.end();
+  } else {
+    res.json({
+      ...(detail ? { responseData: feResponseData } : {}),
+      id: chatId || '',
+      model: '',
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 1 },
+      choices: [
+        {
+          message: { role: 'assistant', content: answerText },
+          finish_reason: 'stop',
+          index: 0
+        }
+      ]
+    });
   }
+
+  // add record
+  const { total } = pushChatBill({
+    appName: app.name,
+    appId: app._id,
+    teamId: user.team.teamId,
+    tmbId: user.team.tmbId,
+    source: getBillSourceByAuthType({ shareId, authType }),
+    response: responseData
+  });
+
+  if (shareId) {
+    pushResult2Remote({ authToken, shareId, responseData });
+    updateOutLinkUsage({
+      shareId,
+      total
+    });
+  }
+  if (apikey) {
+    updateApiKeyUsage({
+      apikey,
+      usage: total
+    });
+  }
+  // } catch (err: any) {
+  //   if (stream) {
+  //     sseErrRes(res, err);
+  //     res.end();
+  //   } else {
+  //     jsonRes(res, {
+  //       code: 500,
+  //       error: err
+  //     });
+  //   }
+  // }
 });
 
 export const config = {
