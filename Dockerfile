@@ -9,7 +9,7 @@ ARG name
 # copy packages and one project
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY ./packages ./packages
-COPY ./projects/$name/package.json ./projects/$name/package.json
+COPY ./projects/app/package.json ./projects/app/package.json
 
 RUN [ -f pnpm-lock.yaml ] || (echo "Lockfile not found." && exit 1)
 
@@ -25,13 +25,13 @@ ARG name
 COPY package.json pnpm-workspace.yaml ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages ./packages
-COPY ./projects/$name ./projects/$name
-COPY --from=deps /app/projects/$name/node_modules ./projects/$name/node_modules
+COPY ./projects/app ./projects/app
+COPY --from=deps /app/projects/app/node_modules ./projects/app/node_modules
 
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 RUN npm install -g pnpm
-RUN pnpm --filter=$name run build
+RUN pnpm --filter=app run build
 
 FROM node:18.15-alpine AS runner
 WORKDIR /app
@@ -48,12 +48,12 @@ RUN apk add curl \
   && update-ca-certificates
 
 # copy running files
-COPY --from=builder /app/projects/$name/public ./projects/$name/public
-COPY --from=builder /app/projects/$name/next.config.js ./projects/$name/next.config.js
-COPY --from=builder --chown=nextjs:nodejs /app/projects/$name/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/projects/$name/.next/static ./projects/$name/.next/static
+COPY --from=builder /app/projects/app/public ./projects/app/public
+COPY --from=builder /app/projects/app/next.config.js ./projects/app/next.config.js
+COPY --from=builder --chown=nextjs:nodejs /app/projects/app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/projects/app/.next/static ./projects/app/.next/static
 # copy package.json to version file
-COPY --from=builder /app/projects/$name/package.json ./package.json 
+COPY --from=builder /app/projects/app/package.json ./package.json 
 
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
@@ -63,6 +63,6 @@ EXPOSE 3000
 
 USER nextjs
 
-ENV serverPath=./projects/$name/server.js
+ENV serverPath=./projects/app/server.js
 
 ENTRYPOINT ["sh","-c","node ${serverPath}"]
