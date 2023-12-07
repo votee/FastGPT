@@ -38,7 +38,7 @@ export async function getVectorsByText({
       })
       .then(async (res) => {
         if (!res.data) {
-          return Promise.reject('Embedding API 404');
+          return Promise.reject('Embedding API 404: ' + res);
         }
         if (!res?.data?.[0]?.embedding) {
           console.log(res?.data);
